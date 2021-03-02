@@ -1,0 +1,11 @@
+[package]
+name = "v4l-subdev"
+version = "0.1.0"
+authors = ["Jaakko Nissi <jaakko.nissi@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.57.0"

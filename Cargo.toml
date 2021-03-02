@@ -1,0 +1,35 @@
+[package]
+name = "camcam"
+version = "0.1.0"
+authors = ["Jaakko Nissi <jaakko.nissi@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dependencies]
+futures = "0.3.12"
+dirs = "3.0.1"
+gdk-pixbuf = { version = "0.9", features = ["v2_32"] }
+gio = { version = "0.9" }
+glib = "0.10"
+gtk = { version = "0.9.2", features = ["v3_18"] }
+image = "0.23"
+lazy_static = "1.4.0"
+linux_media = { path = "linux_media" }
+libc = "0.2.86"
+relm = "0.20.0"
+relm-derive = "0.20.0"
+regex = "1.4.3"
+v4l = "0.12"
+v4l-subdev = { path = "v4l-subdev" }
+
+[workspaces]
+members = [
+	"linux_media",
+	"v4l-subdev"
+]
+
