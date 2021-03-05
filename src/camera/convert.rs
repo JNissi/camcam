@@ -1,3 +1,4 @@
+use chrono::prelude::*;
 use image;
 use lazy_static::lazy_static;
 use std::{env, path::{Path, PathBuf}};
@@ -21,8 +22,10 @@ pub fn save(data: Vec<u8>, width: usize, height: usize) {
     let b = smudge_blue(&b, width, height);
     let data = combine_rgb(&r, &g, &b);
 
+    let now = Local::now();
+    let time_part = now.format("%Y-%m-%d-%H-%M-%S");
     let mut pic_path = PICTURES_DIR.clone();
-    pic_path.push("pic.jpg");
+    pic_path.push(format!("camcam-{}.jpg", time_part));
     image::save_buffer(&pic_path, &data, width as u32, height as u32, image::ColorType::Rgb8);
 }
 
