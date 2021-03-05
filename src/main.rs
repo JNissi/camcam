@@ -6,21 +6,21 @@ use std::{path::PathBuf, thread};
 
 
 mod camera;
-use camera::Camera;
+use camera::{ Camera, CamMsg };
 
 mod picture;
 use picture::Picture;
 
 struct Model {
-    channel: Channel<Picture>,
-    status_channel: Channel<()>,
-    camera: Camera
+    channel: Channel<CamMsg>,
+    camera: Option<Camera>
 }
 
 use self::Msg::*;
 
 #[derive(Msg)]
 enum Msg {
+    Cam(Camera),
     Pic(Picture),
     Shutter,
     PhotoDone,
@@ -45,30 +45,31 @@ impl Update for MainWin {
     fn model(relm: &Relm<Self>, _: ()) -> Model {
         let stream = relm.stream().clone();
 
-        let (channel, sender) = Channel::new(move |pic| {
-            stream.emit(Pic(pic));
+        let (channel, sender) = Channel::new(move |msg| {
+            match msg {
+                CamMsg::Ready(cam) => stream.emit(Cam(cam)),
+                CamMsg::Pic(pic) => stream.emit(Pic(pic)),
+                CamMsg::Captured => stream.emit(PhotoDone)
+            }
         });
 
-        let stream = relm.stream().clone();
-
-        let (status_channel, status_sender) = Channel::new(move |_| {
-            stream.emit(PhotoDone);
+        thread::spawn(move || {
+            Camera::detect(sender);
         });
-
-        let mut camera = Camera::detect(sender, status_sender).expect("Couldn't get camera.");
-
-        camera.start_preview();
 
         Model {
             channel,
-            status_channel,
-            camera
+            camera: None
         }
     }
 
     fn update(&mut self, event: Msg) {
         match event {
             Quit => gtk::main_quit(),
+            Cam(cam) => {
+                cam.start_preview();
+                self.model.camera = Some(cam)
+            },
             Pic(pic) => {
                 let pb = Pixbuf::from_bytes(
                     &pic.data(),
@@ -86,11 +87,11 @@ impl Update for MainWin {
                 //self.widgets.window.show_all();
             },
             Shutter => {
-                self.model.camera.stop_preview();
-                self.model.camera.capture();
+                self.model.camera.as_ref().unwrap().stop_preview();
+                self.model.camera.as_ref().unwrap().capture();
             },
             PhotoDone => {
-                self.model.camera.start_preview();
+                self.model.camera.as_ref().unwrap().start_preview();
             }
         }
     }
