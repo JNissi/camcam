@@ -1,5 +1,5 @@
 use gdk_pixbuf::{Colorspace, Pixbuf, PixbufRotation};
-use gtk::{prelude::BuilderExtManual, ApplicationWindow, Builder, Button, ButtonExt, Image, ImageExt, Inhibit, WidgetExt};
+use gtk::{prelude::{BuilderExtManual, WidgetExtManual}, ApplicationWindow, Builder, Button, ButtonExt, Image, ImageExt, Inhibit, WidgetExt};
 use relm::{connect, Channel, Relm, Sender, Update, Widget};
 use relm_derive::Msg;
 use std::{path::PathBuf, thread};
@@ -24,6 +24,8 @@ enum Msg {
     Pic(Picture),
     Shutter,
     PhotoDone,
+    Unfocus,
+    Focus,
     Quit,
 }
 
@@ -92,6 +94,18 @@ impl Update for MainWin {
             },
             PhotoDone => {
                 self.model.camera.as_ref().unwrap().start_preview();
+            },
+            Unfocus => {
+                if let Some(cam) = self.model.camera.as_ref() {
+                    cam.stop_preview();
+                }
+                println!("Should stop preview.");
+            },
+            Focus => {
+                if let Some(cam) = self.model.camera.as_ref() {
+                    cam.start_preview();
+                }
+                println!("Should start preview.");
             }
         }
     }
@@ -130,6 +144,20 @@ impl Widget for MainWin {
             window,
             connect_delete_event(_, _),
             return (Some(Msg::Quit), Inhibit(false))
+        );
+
+        connect!(
+            relm,
+            window,
+            connect_focus_in_event(_, _),
+            return (Some(Msg::Focus), Inhibit(false))
+        );
+
+        connect!(
+            relm,
+            window,
+            connect_focus_out_event(_, _),
+            return (Some(Msg::Unfocus), Inhibit(false))
         );
 
         connect!(
