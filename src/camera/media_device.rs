@@ -1,156 +1,19 @@
 use lazy_static::lazy_static;
 use linux_media::*;
-use v4l_subdev::*;
 use regex::Regex;
 use std::path::PathBuf;
-use std::str;
-use std::os::raw::c_char;
-use std::{alloc::{alloc_zeroed, Layout}, ffi::CStr, fs, io, mem, path::Path, slice, sync::Arc};
+use std::{alloc::{alloc_zeroed, Layout}, fs, io, mem, path::Path, slice, sync::Arc};
 use v4l::{v4l2};
 use crate::camera::media_ioctl as ioctl;
+use crate::camera::video_device::VideoDevice;
+pub use crate::camera::subdevice::Subdevice;
+use crate::camera::topology::*;
 
 pub struct MediaDevice {
     handle: Arc<Handle>,
     video_device: Option<VideoDevice>,
     front_camera: Option<Subdevice>,
     back_camera: Option<Subdevice>
-}
-
-pub struct VideoDevice {
-    // No need for handle, that's handled (pun intented) on Camera level.
-    entity: Entity,
-    interface: Interface,
-    pad: Pad
-}
-
-impl VideoDevice {
-    pub fn new(entity: &Entity, interface: &Interface, pad: &Pad) -> Self {
-        VideoDevice {
-            entity: entity.clone(),
-            interface: interface.clone(),
-            pad: pad.clone()
-        }
-    }
-}
-
-pub struct Subdevice {
-    handle: Arc<Handle>,
-    entity: Entity,
-    interface: Interface,
-    pad: Pad
-}
-
-impl Subdevice {
-    pub fn open<P: AsRef<Path>>(path: P, entity: &Entity, interface: &Interface, pad: &Pad) -> io::Result<Self> {
-        let fd = v4l2::open(&path, libc::O_RDWR)?;
-
-        if fd == -1 {
-            return Err(io::Error::last_os_error());
-        }
-
-        Ok(Subdevice {
-            handle: Arc::new(Handle { fd }),
-            entity: entity.clone(),
-            interface: interface.clone(),
-            pad: pad.clone()
-        })
-    }
-
-    fn handle(&self) -> Arc<Handle> {
-        self.handle.clone()
-    }
-
-    pub fn set_format(&self, width: u32, height: u32) {
-        unsafe {
-            let mut format: v4l2_subdev_format = mem::zeroed();
-            format.which = 1;
-            format.format.width = width;
-            format.format.height = height;
-            format.format.code = 0x3001; //<- BGGR 0x3014; <- RGGB
-            format.format.colorspace = v4l2_colorspace_V4L2_COLORSPACE_RAW;
-
-            v4l2::ioctl(
-                self.handle().fd(),
-                ioctl::VIDIOC_SUBDEV_S_FMT,
-                &mut format as *mut _ as *mut std::os::raw::c_void
-            ).expect("Failed setting subdevice format.");
-
-            let format = SubdevFormat::from(&format);
-
-            println!("Set subdevice format: {:#?}", format);
-        }
-    }
-
-    pub fn set_interval(&self, numerator: u32, denominator: u32) {
-        unsafe {
-            let mut interval: v4l2_subdev_frame_interval = mem::zeroed();
-
-            interval.interval.numerator = numerator;
-            interval.interval.denominator = denominator;
-
-            v4l2::ioctl(
-                self.handle().fd(),
-                ioctl::VIDIOC_SUBDEV_G_FRAME_INTERVAL,
-                &mut interval as *mut _ as *mut std::os::raw::c_void
-            ).expect("Failed querying subdevice interval");
-
-            let numerator = interval.interval.numerator;
-            let denominator = interval.interval.denominator;
-
-            println!("Set subdevice interval: {}/{}", numerator, denominator);
-        }
-    }
-
-    pub fn auto_focus(&self, enable: bool) {
-        unsafe {
-            let mut val = v4l2_control {
-                id: V4L2_CID_FOCUS_AUTO,
-                value: if enable { 1 } else { 0 }
-            };
-
-            v4l2::ioctl(
-                self.handle().fd(),
-                v4l2::vidioc::VIDIOC_S_CTRL,
-                &mut val as *mut _ as *mut std::os::raw::c_void
-            ).expect("Failed setting subdev autofocus.");
-        }
-    }
-
-    pub fn print_interval(&self) {
-        unsafe {
-            let mut interval: v4l2_subdev_frame_interval = mem::zeroed();
-
-            v4l2::ioctl(
-                self.handle().fd(),
-                ioctl::VIDIOC_SUBDEV_G_FRAME_INTERVAL,
-                &mut interval as *mut _ as *mut std::os::raw::c_void
-            ).expect("Failed querying subdevice interval");
-
-            let numerator = interval.interval.numerator;
-            let denominator = interval.interval.denominator;
-
-            println!("Subdevice interval: {}/{}", numerator, denominator);
-        }
-    }
-
-    pub fn print_format(&self) {
-        unsafe {
-            let mut format: v4l2_subdev_format = mem::zeroed();
-
-            format.pad = 0;
-            format.which = v4l2_subdev_format_whence_V4L2_SUBDEV_FORMAT_TRY;
-
-            v4l2::ioctl(
-                self.handle().fd(),
-                ioctl::VIDIOC_SUBDEV_G_FMT,
-                &mut format as *mut _ as *mut std::os::raw::c_void
-            ).expect("Failed reading subdevice format.");
-
-            let format = SubdevFormat::from(&format);
-
-            println!("Subdevice format: {:#?}", format);
-        }
-    }
 }
 
 impl MediaDevice {
@@ -267,8 +130,8 @@ impl MediaDevice {
         );
         self.video_device = Some(video_device);
 
-        self.unlink_back_camera();
         self.unlink_front_camera();
+        self.unlink_back_camera();
         self.link_front_camera();
     }
 
@@ -299,16 +162,16 @@ impl MediaDevice {
             let pad_count = topology.num_pads as usize;
             let link_count = topology.num_links as usize;
 
-            let mut entities = Layout::array::<media_v2_entity>(entity_count)
+            let entities = Layout::array::<media_v2_entity>(entity_count)
                 .expect("Couldn't allocate memory for entities.");
             topology.ptr_entities = alloc_zeroed(entities) as u64;
-            let mut interfaces = Layout::array::<media_v2_interface>(interface_count)
+            let interfaces = Layout::array::<media_v2_interface>(interface_count)
                 .expect("Couldn't allocate memory for interfaces");
             topology.ptr_interfaces = alloc_zeroed(interfaces) as u64;
-            let mut pads = Layout::array::<media_v2_pad>(pad_count)
+            let pads = Layout::array::<media_v2_pad>(pad_count)
                 .expect("Couldn't allocate memory for pads.");
             topology.ptr_pads = alloc_zeroed(pads) as u64;
-            let mut links = Layout::array::<media_v2_link>(link_count)
+            let links = Layout::array::<media_v2_link>(link_count)
                 .expect("Couldn't allocate memory for links.");
             topology.ptr_links = alloc_zeroed(links) as u64;
 
@@ -392,11 +255,17 @@ impl MediaDevice {
     }
 }
 
-struct Handle {
+pub struct Handle {
     fd: std::os::raw::c_int
 }
 
 impl Handle {
+    pub fn new(fd: std::os::raw::c_int) -> Handle {
+        Handle {
+            fd
+        }
+    }
+
     pub fn fd(&self) -> std::os::raw::c_int {
         self.fd
     }
@@ -433,171 +302,6 @@ impl From<media_device_info> for Info {
     }
 }
 
-#[derive(Debug)]
-pub struct Topology {
-    version: u64,
-    entities: Vec<Entity>,
-    interfaces: Vec<Interface>,
-    pads: Vec<Pad>,
-    links: Vec<Link>,
-}
-
-impl Topology {
-    fn from(topology: media_v2_topology, entities: &[media_v2_entity], interfaces: &[media_v2_interface], pads: &[media_v2_pad], links: &[media_v2_link]) -> Topology {
-        let entities = entities.iter().map(|e| Entity::from(e)).collect();
-        let interfaces = interfaces.iter().map(|i| Interface::from(i)).collect();
-        let pads = pads.iter().map(|p| Pad::from(p)).collect();
-        let links = links.iter().map(|l| Link::from(l)).collect();
-        Topology {
-            version: topology.topology_version,
-            entities: entities,
-            interfaces: interfaces,
-            pads: pads,
-            links: links
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Entity {
-    id: u32,
-    name: String,
-    function: u32,
-    flags: u32,
-}
-
-impl From<&media_v2_entity> for Entity {
-    fn from(entity: &media_v2_entity) -> Entity {
-        Entity {
-            id: entity.id,
-            name: c_char_array_to_string(&entity.name),
-            function: entity.function,
-            flags: entity.flags
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Interface {
-    id: u32,
-    interface_type: u32,
-    flags: u32,
-    major: u32,
-    minor: u32
-}
-
-impl From<&media_v2_interface> for Interface {
-    fn from(interface: &media_v2_interface) -> Interface {
-        let (major, minor) = unsafe {
-            (interface.__bindgen_anon_1.devnode.major,
-            interface.__bindgen_anon_1.devnode.minor)
-        };
-        Interface {
-            id: interface.id,
-            interface_type: interface.intf_type,
-            flags: interface.flags,
-            major: major,
-            minor: minor
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Pad {
-    id: u32,
-    entity_id: u32,
-    flags: u32,
-    index: u32,
-}
-
-impl From<&media_v2_pad> for Pad {
-    fn from(pad: &media_v2_pad) -> Pad {
-        Pad {
-            id: pad.id,
-            entity_id: pad.entity_id,
-            flags: pad.flags,
-            index: pad.index
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Link {
-    id: u32,
-    source_id: u32,
-    sink_id: u32,
-    flags: u32,
-}
-
-impl From<&media_v2_link> for Link {
-    fn from(link: &media_v2_link) -> Link {
-        Link {
-            id: link.id,
-            source_id: link.source_id,
-            sink_id: link.sink_id,
-            flags: link.flags
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SubdevFormat {
-    which: u32,
-    pad: u32,
-    format: FrameFormat
-}
-
-impl From<&v4l2_subdev_format> for SubdevFormat {
-    fn from(fmt: &v4l2_subdev_format) -> SubdevFormat {
-        SubdevFormat {
-            which: fmt.which,
-            pad: fmt.pad,
-            format: FrameFormat::from(&fmt.format)
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct FrameFormat {
-    width: u32,
-    height: u32,
-    code: u32,
-    field: u32,
-    colorspace: u32,
-    quantization: u16,
-    xfer_func: u16
-}
-
-impl From<&v4l2_mbus_framefmt> for FrameFormat {
-    fn from(fmt: &v4l2_mbus_framefmt) -> FrameFormat {
-        FrameFormat {
-            width: fmt.width,
-            height: fmt.height,
-            code: fmt.code,
-            field: fmt.field,
-            colorspace: fmt.colorspace,
-            quantization: fmt.quantization,
-            xfer_func: fmt.xfer_func
-        }
-    }
-}
-
-fn c_char_array_to_string(data: &[c_char]) -> String {
-    let c_str = unsafe { CStr::from_ptr(data.as_ptr()) };
-    c_str.to_str()
-        .unwrap()
-        .trim_matches(char::from(0))
-        .to_string()
-}
-
-fn parse_kernel_version(v: u32) -> (u8, u8, u8) {
-    let major = ((v >> 16) & 0xff) as u8;
-    let minor = ((v >> 8) & 0xff) as u8;
-    let patch = (v & 0xff) as u8;
-    (major, minor, patch)
-}
-
-
 fn get_device_path_from_interface(interface: &Interface) -> PathBuf {
     lazy_static! {
         static ref DEVNAME_REGEX: Regex = Regex::new(r"(?m)^DEVNAME=(.+)$").unwrap();
@@ -606,7 +310,7 @@ fn get_device_path_from_interface(interface: &Interface) -> PathBuf {
     let major = interface.major;
     let minor = interface.minor;
 
-    let mut path = PathBuf::from(format!("/sys/dev/char/{}:{}/uevent", major, minor));
+    let path = PathBuf::from(format!("/sys/dev/char/{}:{}/uevent", major, minor));
     let path_string = path.to_string_lossy().to_string();
 
     let ue = fs::read_to_string(path)

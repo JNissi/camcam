@@ -1,23 +1,21 @@
 use crate::picture::Picture;
-use futures::StreamExt;
 use v4l::prelude::*;
 use v4l::context;
 use v4l::video::Capture;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
-use v4l::io::traits::Stream;
 use v4l::format::{Format, Flags, fourcc::FourCC, field::FieldOrder, colorspace::Colorspace, quantization::Quantization, transfer::TransferFunction};
-use v4l::v4l2;
-use dirs;
 
 use relm::Sender;
-use std::{fs, fs::File, io, io::prelude::*, path::{Path, PathBuf}, sync::{Arc, Mutex, RwLock}, thread};
-use std::time::{Duration, SystemTime};
+use std::{fs, io, path::{Path, PathBuf}, sync::{Arc, Mutex, RwLock}, thread};
 use media_device::MediaDevice;
 
 mod convert;
 mod media_ioctl;
 mod media_device;
+mod topology;
+mod subdevice;
+mod video_device;
 
 
 const CAMERA_NAME: &str = "sun6i-csi";
@@ -68,10 +66,6 @@ impl Camera {
         }
     }
 
-    pub fn set_sender(&mut self, sender: Sender<CamMsg>) {
-        self.sender = Arc::new(Mutex::new(sender));
-    }
-
     pub fn stop_preview(&self) {
         let mut sp = self.should_preview.write().unwrap();
         *sp = false;
@@ -93,14 +87,10 @@ impl Camera {
             let md = media_device.write()
                 .expect("Couldn't lock media device.");
             md.unlink_front_camera();
-            let now = SystemTime::now();
             md.link_back_camera();
             md.set_format(1280, 720);
             md.set_interval(1, 30);
 
-            if let Ok(dur) = now.elapsed() {
-                println!("Link back camera took {}ms", dur.as_millis());
-            }
             let format = Format {
                 width: 1280,
                 height: 720,
@@ -116,7 +106,7 @@ impl Camera {
 
             let num_bufs = 4;
             let mut dev = dev.write().unwrap();
-            dev.set_format(&format);
+            dev.set_format(&format).expect("Can't set video device buffer.");
             let format = dev.format().expect("Couldn't get device format.");
             println!("Device format: {:#?}", format);
             let mut stream = MmapStream::with_buffers(&mut *dev, Type::VideoCapture, num_bufs)
@@ -137,18 +127,14 @@ impl Camera {
             // The driver seems to expect all buffers queued before start
             // Otherwise it just gets stuck at first stream.next()
             for i in 1..num_bufs as usize {
-                stream.queue(i);
+                stream.queue(i).expect("Can't queue buffer");
             }
 
             //stream.start();
 
             while *preview_lock.read().unwrap() == true {
-//                let now = SystemTime::now();
-                let (buf, meta) = stream.next()
+                let (buf, _meta) = stream.next()
                     .expect("Failure when reading picture from MmapStream!");
-//                if let Ok(dur) = now.elapsed() {
-//                    println!("Debayer took: {} ms", dur.as_millis());
-//                }
                 let buf_len = buf.len();
                 if buf_len == 0 {
                     continue;
@@ -180,7 +166,6 @@ impl Camera {
         // TODO: Properly handle device busy and remove sleep.
         thread::sleep_ms(200);
         let dev = self.main_device.clone();
-        let sender = self.sender.clone();
         let preview_lock = self.should_preview.clone();
         {
             let mut sp = preview_lock.write().unwrap();
@@ -189,9 +174,12 @@ impl Camera {
         let media_device = self.media_device.clone();
         let md = media_device.write()
             .expect("Couldn't lock media device.");
+
         md.link_back_camera();
         md.set_interval(1, 15);
+        md.set_interval(1, 15);
         md.set_format(2592, 1944);
+
         let format = Format {
             width: 2592,
             height: 1944,
@@ -207,7 +195,7 @@ impl Camera {
 
         let num_bufs = 4;
         let mut dev = dev.write().unwrap();
-        dev.set_format(&format);
+        dev.set_format(&format).expect("Can't set video device format.");
         let params = dev.params().expect("Couldn't get device params.");
         println!("Device params: {:#?}", params);
         let format = dev.format().expect("Couldn't get device format.");
@@ -222,16 +210,16 @@ impl Camera {
 
         let width = format.width;
         let height = format.height;
-        let stride = format.stride;
+        let _stride = format.stride;
 
         for i in 1..num_bufs as usize {
-            stream.queue(i);
+            stream.queue(i).expect("Can't queue buffer");
         }
 
         let mut count = 0;
 
         loop {
-            let (buf, meta) = stream.next()
+            let (buf, _meta) = stream.next()
                 .expect("Failure when reading picture from MmapStream!");
             let buf_len = buf.len();
             assert!(buf_len % 4 == 0);
@@ -285,7 +273,7 @@ fn debayer_superpixel(data: &[u8], width: u32, height: u32) -> Vec<u8> {
     let out_w = width / 2;
     let out_h = height / 2;
     let mut out = Vec::with_capacity(out_w * out_h * 3);
-    let mut super_pix = [0, 1, width, width + 1];
+    let super_pix = [0, 1, width, width + 1];
     let len = data.len();
 
     for row in (0..len).step_by(width + width) {
@@ -301,30 +289,6 @@ fn debayer_superpixel(data: &[u8], width: u32, height: u32) -> Vec<u8> {
             out.push(data[super_pix[1] + top_left]);
             out.push(data[super_pix[0] + top_left]);
       }
-    }
-
-    out
-}
-
-// 200 ms
-fn debayer_superpixel_slow(data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let width = width as usize;
-    let height = height as usize;
-    let out_w = width / 2;
-    let out_h = height / 2;
-    let mut out = vec![0; out_w * out_h * 3];
-
-    for (out_row, row) in (0..height).step_by(2).enumerate() {
-        let out_offset = out_row * out_w * 3;
-        for (out_col, col) in (0..width).step_by(2).enumerate() {
-            let out_offset = out_offset + out_col * 3;
-            out[out_offset] = data[(row + 1) * width + col + 1];
-            let mut g: usize = data[row * width + col + 1] as usize;
-            g += data[(row + 1) * width + col] as usize;
-            let g = (g / 2) as u8;
-            out[out_offset + 1] = g;
-            out[out_offset + 2] = data[row * width + col];
-        }
     }
 
     out

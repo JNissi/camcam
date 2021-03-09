@@ -1,8 +1,8 @@
 use gdk_pixbuf::{Colorspace, Pixbuf, PixbufRotation};
-use gtk::{prelude::{BuilderExtManual, WidgetExtManual}, ApplicationWindow, Builder, Button, ButtonExt, Image, ImageExt, Inhibit, WidgetExt};
-use relm::{connect, Channel, Relm, Sender, Update, Widget};
+use gtk::{prelude::{BuilderExtManual}, ApplicationWindow, Builder, Button, ButtonExt, Image, ImageExt, Inhibit, WidgetExt};
+use relm::{connect, Channel, Relm, Update, Widget};
 use relm_derive::Msg;
-use std::{path::PathBuf, thread};
+use std::thread;
 
 
 mod camera;
@@ -12,7 +12,7 @@ mod picture;
 use picture::Picture;
 
 struct Model {
-    channel: Channel<CamMsg>,
+    _channel: Channel<CamMsg>,
     camera: Option<Camera>
 }
 
@@ -60,7 +60,7 @@ impl Update for MainWin {
         });
 
         Model {
-            channel,
+            _channel: channel,
             camera: None
         }
     }

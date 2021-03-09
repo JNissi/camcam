@@ -26,7 +26,9 @@ pub fn save(data: Vec<u8>, width: usize, height: usize) {
     let time_part = now.format("%Y-%m-%d-%H-%M-%S");
     let mut pic_path = PICTURES_DIR.clone();
     pic_path.push(format!("camcam-{}.jpg", time_part));
-    image::save_buffer(&pic_path, &data, width as u32, height as u32, image::ColorType::Rgb8);
+    if let Err(e) = image::save_buffer(&pic_path, &data, width as u32, height as u32, image::ColorType::Rgb8) {
+        println!("Error saving image: {}", e);
+    }
 }
 
 fn combine_rgb(r: &[u8], g: &[u8], b: &[u8]) -> Vec<u8> {
