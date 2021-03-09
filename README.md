@@ -25,6 +25,13 @@ Developed on Manjaro Phosh. Might work on Mobian, depending on how badly outdate
  * Video recording
  * Everything and the kitchen sink
 
+## What to expect as of 9th March 2021 (I'll try to keep this up-to-date)
+ * Only back camera works.
+ * Might need to run Megapixels first to fix some kinks.
+ * Photo quality is not much to write home about. A bit dark and there's some noise, but you can tell by looking at the photo what the subject is.
+ 
+![a tired cat under a plant](https://raw.githubusercontent.com/JNissi/camcam/main/example_photos/camcam-2021-03-09-07-02-01.jpg)
+
 ## Acknowledgements
 
 A huge thanks goes to Martijn Braam for figuring out the Pinephone camera setup for their app Megapixels. Seriously, check it out if you need more configurability.
