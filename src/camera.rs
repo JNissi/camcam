@@ -211,9 +211,6 @@ impl Camera {
     }
 
     pub fn capture(&self) {
-        // Sleep a bit so as not to hang on device busy error.
-        // TODO: Properly handle device busy and remove sleep.
-        thread::sleep_ms(200);
         let dev = self.main_device.clone();
         let preview_lock = self.should_preview.clone();
         {
