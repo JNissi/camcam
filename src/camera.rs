@@ -20,6 +20,12 @@ mod video_device;
 
 const CAMERA_NAME: &str = "sun6i-csi";
 
+#[derive(Clone, Copy)]
+enum Sensor {
+    Back,
+    Front
+}
+
 pub enum CamMsg {
     Ready(Camera),
     Pic(Picture),
@@ -31,6 +37,8 @@ pub struct Camera {
     should_preview: Arc<RwLock<bool>>,
     media_device: Arc<RwLock<MediaDevice>>,
     sender: Arc<Mutex<Sender<CamMsg>>>,
+    sensor: Sensor,
+    thread_handle: Option<thread::JoinHandle<()>>
 }
 
 impl Camera {
@@ -55,7 +63,9 @@ impl Camera {
                 main_device: Arc::new(RwLock::new(device)),
                 should_preview: Arc::new(RwLock::new(false)),
                 media_device: Arc::new(RwLock::new(media_device)),
-                sender: sender
+                sender: sender,
+                sensor: Sensor::Back,
+                thread_handle: None
             };
 
             sender_copy.lock()
@@ -66,12 +76,30 @@ impl Camera {
         }
     }
 
-    pub fn stop_preview(&self) {
-        let mut sp = self.should_preview.write().unwrap();
-        *sp = false;
+    pub fn switch_sensor(&mut self) {
+        println!("Camera switching sensor.");
+        self.stop_preview();
+        println!("Preview stopped.");
+        self.sensor = match self.sensor {
+            Sensor::Back => Sensor::Front,
+            Sensor::Front => Sensor::Back
+        };
+        println!("Starting preview");
+        self.start_preview();
+        println!("Preview started");
     }
 
-    pub fn start_preview(&self) {
+    pub fn stop_preview(&mut self) {
+        {
+            let mut sp = self.should_preview.write().unwrap();
+            *sp = false;
+        } // Drop write lock. Otherwise read can't happen in the preview loop.
+        if let Some(handle) = self.thread_handle.take() {
+            handle.join();
+        }
+    }
+
+    pub fn start_preview(&mut self) {
         let dev = self.main_device.clone();
         let sender = self.sender.clone();
         let preview_lock = self.should_preview.clone();
@@ -80,24 +108,41 @@ impl Camera {
             *sp = true;
         }
         let media_device = self.media_device.clone();
+        let sensor = self.sensor;
+
+        let (w, h, denominator) = match sensor {
+            Sensor::Back => (1280, 720, 30),
+            Sensor::Front => (1280, 960, 15)
+        };
 
 
-        thread::spawn(move || {
+        let thread_handle = thread::spawn(move || {
 
             let md = media_device.write()
                 .expect("Couldn't lock media device.");
-            md.unlink_front_camera();
-            md.link_back_camera();
-            md.set_format(1280, 720);
-            md.set_interval(1, 30);
+            match sensor {
+                Sensor::Back => {
+                    md.unlink_front_camera();
+                    md.link_back_camera();
+                    md.set_back_format(w, h);
+                    md.set_back_interval(1, denominator);
+                },
+                Sensor::Front => {
+                    md.unlink_back_camera();
+                    md.link_front_camera();
+                    md.set_front_format(w, h);
+                    md.set_front_interval(1, denominator);
+                    md.hflip_front(true);
+                }
+            }
 
             let format = Format {
-                width: 1280,
-                height: 720,
+                width: w,
+                height: h,
                 fourcc: FourCC::new(b"BA81"),
                 field_order: FieldOrder::Progressive,
-                stride: 1280,
-                size: 1280 * 720,
+                stride: w,
+                size: w * h,
                 flags: Flags::empty(),
                 colorspace: Colorspace::RAW,
                 quantization: Quantization::Default,
@@ -158,7 +203,11 @@ impl Camera {
 
             }
 
+            println!("Done with preview thread.");
+
         });
+
+        self.thread_handle = Some(thread_handle);
     }
 
     pub fn capture(&self) {
@@ -171,22 +220,36 @@ impl Camera {
             let mut sp = preview_lock.write().unwrap();
             *sp = true;
         }
+
+        let (w, h, denominator) = match self.sensor {
+            Sensor::Back => (2592, 1944, 15),
+            Sensor::Front => (1600, 1200, 15)
+        };
+
         let media_device = self.media_device.clone();
         let md = media_device.write()
             .expect("Couldn't lock media device.");
 
-        md.link_back_camera();
-        md.set_interval(1, 15);
-        md.set_interval(1, 15);
-        md.set_format(2592, 1944);
+        match self.sensor {
+            Sensor::Back => {
+                md.link_back_camera();
+                md.set_back_interval(1, denominator);
+                md.set_back_format(w, h);
+            },
+            Sensor::Front => {
+                md.link_front_camera();
+                md.set_front_interval(1, denominator);
+                md.set_front_format(w, h);
+            }
+        }
 
         let format = Format {
-            width: 2592,
-            height: 1944,
+            width: w,
+            height: h,
             fourcc: FourCC::new(b"BA81"),
             field_order: FieldOrder::Progressive,
-            stride: 2592,
-            size: 2592 * 1944,
+            stride: w,
+            size: w * h,
             flags: Flags::empty(),
             colorspace: Colorspace::RAW,
             quantization: Quantization::Default,

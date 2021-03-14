@@ -27,6 +27,7 @@ enum Msg {
     Unfocus,
     Focus,
     Quit,
+    SwitchCamera
 }
 
 struct Widgets {
@@ -68,7 +69,7 @@ impl Update for MainWin {
     fn update(&mut self, event: Msg) {
         match event {
             Quit => gtk::main_quit(),
-            Cam(cam) => {
+            Cam(mut cam) => {
                 cam.start_preview();
                 self.model.camera = Some(cam)
             },
@@ -89,23 +90,29 @@ impl Update for MainWin {
                 //self.widgets.window.show_all();
             },
             Shutter => {
-                self.model.camera.as_ref().unwrap().stop_preview();
+                self.model.camera.as_mut().unwrap().stop_preview();
                 self.model.camera.as_ref().unwrap().capture();
             },
             PhotoDone => {
-                self.model.camera.as_ref().unwrap().start_preview();
+                self.model.camera.as_mut().unwrap().start_preview();
             },
             Unfocus => {
-                if let Some(cam) = self.model.camera.as_ref() {
+                if let Some(cam) = self.model.camera.as_mut() {
                     cam.stop_preview();
                 }
                 println!("Should stop preview.");
             },
             Focus => {
-                if let Some(cam) = self.model.camera.as_ref() {
+                if let Some(cam) = self.model.camera.as_mut() {
                     cam.start_preview();
                 }
                 println!("Should start preview.");
+            },
+            SwitchCamera => {
+                if let Some(cam) = self.model.camera.as_mut() {
+                    cam.switch_sensor();
+                }
+                println!("Switch camera.");
             }
         }
     }
@@ -133,11 +140,6 @@ impl Widget for MainWin {
             .get_object("preview")
             .expect("Can't get preview image widget.");
 
-        let shutter: Button = builder
-            .get_object("shutter")
-            .expect("Can't get shutter button.");
-
-        window.show_all();
 
         connect!(
             relm,
@@ -160,12 +162,29 @@ impl Widget for MainWin {
             return (Some(Msg::Unfocus), Inhibit(false))
         );
 
+        let shutter: Button = builder
+            .get_object("shutter")
+            .expect("Can't get shutter button.");
+
         connect!(
             relm,
             shutter,
             connect_clicked(_),
             Msg::Shutter
         );
+
+        let camera_switch: Button = builder
+            .get_object("camera_switch")
+            .expect("Can't get camera switch button.");
+
+        connect!(
+            relm,
+            camera_switch,
+            connect_clicked(_),
+            Msg::SwitchCamera
+        );
+
+        window.show_all();
 
         MainWin {
             model,

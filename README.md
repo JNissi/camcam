@@ -25,8 +25,8 @@ Developed on Manjaro Phosh. Might work on Mobian, depending on how badly outdate
  * Video recording
  * Everything and the kitchen sink
 
-## What to expect as of 9th March 2021 (I'll try to keep this up-to-date)
- * Only back camera works.
+## What to expect as of 14th March 2021 (I'll try to keep this up-to-date)
+ * Both cameras work.
  * Might need to run Megapixels first to fix some kinks.
  * Photo quality is not much to write home about. A bit dark and there's some noise, but you can tell by looking at the photo what the subject is.
  

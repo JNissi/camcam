@@ -95,6 +95,36 @@ impl Subdevice {
         }
     }
 
+    pub fn hflip(&self, enable: bool) {
+        unsafe {
+            let mut val = v4l2_control {
+                id: V4L2_CID_HFLIP,
+                value: if enable { 1 } else { 0 }
+            };
+
+            v4l2::ioctl(
+                self.handle().fd(),
+                v4l2::vidioc::VIDIOC_S_CTRL,
+                &mut val as *mut _ as *mut std::os::raw::c_void
+            ).expect("Failed setting subdev hflip.");
+        }
+    }
+
+    pub fn vflip(&self, enable: bool) {
+        unsafe {
+            let mut val = v4l2_control {
+                id: V4L2_CID_VFLIP,
+                value: if enable { 1 } else { 0 }
+            };
+
+            v4l2::ioctl(
+                self.handle().fd(),
+                v4l2::vidioc::VIDIOC_S_CTRL,
+                &mut val as *mut _ as *mut std::os::raw::c_void
+            ).expect("Failed setting subdev vflip.");
+        }
+    }
+
     pub fn print_interval(&self) {
         unsafe {
             let mut interval: v4l2_subdev_frame_interval = mem::zeroed();

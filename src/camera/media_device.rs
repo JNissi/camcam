@@ -135,16 +135,32 @@ impl MediaDevice {
         self.link_front_camera();
     }
 
-    pub fn set_format(&self, width: u32, height: u32) {
+    pub fn set_back_format(&self, width: u32, height: u32) {
         self.back_camera.as_ref().unwrap().set_format(width, height);
     }
 
-    pub fn set_interval(&self, numerator: u32, denominator: u32) {
+    pub fn set_back_interval(&self, numerator: u32, denominator: u32) {
         self.back_camera.as_ref().unwrap().set_interval(numerator, denominator);
+    }
+
+    pub fn set_front_format(&self, width: u32, height: u32) {
+        self.front_camera.as_ref().unwrap().set_format(width, height);
+    }
+
+    pub fn set_front_interval(&self, numerator: u32, denominator: u32) {
+        self.front_camera.as_ref().unwrap().set_interval(numerator, denominator);
     }
 
     pub fn auto_focus(&self, enable: bool) {
         self.back_camera.as_ref().unwrap().auto_focus(enable);
+    }
+
+    pub fn hflip_front(&self, enable: bool) {
+        self.front_camera.as_ref().unwrap().hflip(enable);
+    }
+
+    pub fn vflip_front(&self, enable: bool) {
+        self.front_camera.as_ref().unwrap().vflip(enable);
     }
 
     pub fn topology(&self) -> io::Result<Topology> {
