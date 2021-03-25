@@ -25,8 +25,11 @@ libc = "0.2.86"
 relm = "0.20.0"
 relm-derive = "0.20.0"
 regex = "1.4.3"
+rexiv2 = "0.9.1"
 v4l = "0.12"
 v4l-subdev = { path = "v4l-subdev" }
+# TODO: Switch to stable when available
+zbus = "2.0.0-beta.3"
 
 [workspaces]
 members = [

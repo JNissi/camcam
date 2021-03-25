@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use image;
 use lazy_static::lazy_static;
+use rexiv2::{Metadata, Orientation};
 use std::{env, path::{Path, PathBuf}};
 
 lazy_static! {
@@ -15,7 +16,7 @@ lazy_static! {
     };
 }
 
-pub fn save(data: Vec<u8>, width: usize, height: usize) {
+pub fn save(data: Vec<u8>, width: usize, height: usize, orientation: String) {
     let (r, g, b) = separate_colors(&data, width, height);
     let r = smudge_red(&r, width, height);
     let g = smudge_green(&g, width, height);
@@ -28,6 +29,23 @@ pub fn save(data: Vec<u8>, width: usize, height: usize) {
     pic_path.push(format!("camcam-{}.jpg", time_part));
     if let Err(e) = image::save_buffer(&pic_path, &data, width as u32, height as u32, image::ColorType::Rgb8) {
         println!("Error saving image: {}", e);
+    }
+
+    match Metadata::new_from_path(&pic_path) {
+        Ok(m) => {
+            let orientation = match orientation.as_str() {
+                "normal" => Orientation::Rotate90, // portrait, 8
+                "bottom-up" => Orientation::Rotate270, // upside down portrait, 6
+                "left-up" =>  Orientation::Rotate180, // Upside down landscape, 3
+                "right-up" => Orientation::Normal, // landscape, 1
+                _ => Orientation::Unspecified,
+            };
+            m.set_orientation(orientation);
+            if let Err(e) = m.save_to_file(&pic_path) {
+                println!("Saving exif to {} failed, image was saved though.", &pic_path.to_string_lossy());
+            }
+        },
+        Err(e) => println!("Failed reading exif data from {} which was just saved: {}", &pic_path.to_string_lossy(), e)
     }
 }
 

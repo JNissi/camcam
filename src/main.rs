@@ -11,9 +11,13 @@ use camera::{ Camera, CamMsg };
 mod picture;
 use picture::Picture;
 
-struct Model {
+mod sensor_proxy;
+use sensor_proxy::SensorProxyProxy;
+
+struct Model<'a> {
     _channel: Channel<CamMsg>,
-    camera: Option<Camera>
+    camera: Option<Camera>,
+    sensor_proxy: SensorProxyProxy<'a>
 }
 
 use self::Msg::*;
@@ -35,17 +39,19 @@ struct Widgets {
     preview: Image
 }
 
-struct MainWin {
-    model: Model,
+struct MainWin<'a> {
+    model: Model<'a>,
     widgets: Widgets,
 }
 
-impl Update for MainWin {
-    type Model = Model;
+impl<'a> Update for MainWin<'a> {
+    type Model = Model<'a>;
     type ModelParam = ();
     type Msg = Msg;
 
-    fn model(relm: &Relm<Self>, _: ()) -> Model {
+    fn model(relm: &Relm<Self>, _: ()) -> Model<'a> {
+        let connection = zbus::Connection::new_system().expect("Can't connect to system dbus");
+        let proxy = SensorProxyProxy::new(&connection).expect("Can't construct sensor proxy proxy.");
         let stream = relm.stream().clone();
 
         let (channel, sender) = Channel::new(move |msg| {
@@ -62,7 +68,8 @@ impl Update for MainWin {
 
         Model {
             _channel: channel,
-            camera: None
+            camera: None,
+            sensor_proxy: proxy
         }
     }
 
@@ -91,18 +98,25 @@ impl Update for MainWin {
             },
             Shutter => {
                 self.model.camera.as_mut().unwrap().stop_preview();
-                self.model.camera.as_ref().unwrap().capture();
+                let orientation = self.model.sensor_proxy.accelerometer_orientation();
+                let orientation = match orientation {
+                    Ok(o) => o,
+                    Err(_) => "undefined".to_string()
+                };
+                self.model.camera.as_ref().unwrap().capture(orientation);
             },
             PhotoDone => {
                 self.model.camera.as_mut().unwrap().start_preview();
             },
             Unfocus => {
+                self.model.sensor_proxy.release_accelerometer();
                 if let Some(cam) = self.model.camera.as_mut() {
                     cam.stop_preview();
                 }
                 println!("Should stop preview.");
             },
             Focus => {
+                self.model.sensor_proxy.claim_accelerometer();
                 if let Some(cam) = self.model.camera.as_mut() {
                     cam.start_preview();
                 }
@@ -118,7 +132,7 @@ impl Update for MainWin {
     }
 }
 
-impl Widget for MainWin {
+impl Widget for MainWin<'_> {
     type Root = ApplicationWindow;
 
     fn root(&self) -> Self::Root {

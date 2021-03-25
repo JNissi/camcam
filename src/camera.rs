@@ -210,7 +210,7 @@ impl Camera {
         self.thread_handle = Some(thread_handle);
     }
 
-    pub fn capture(&self) {
+    pub fn capture(&self, orientation: String) {
         let dev = self.main_device.clone();
         let preview_lock = self.should_preview.clone();
         {
@@ -291,7 +291,7 @@ impl Camera {
 
             let buf = buf.to_vec();
             thread::spawn(move || {
-                convert::save(buf, width as usize, height as usize);
+                convert::save(buf, width as usize, height as usize, orientation);
             });
             self.sender.clone().lock().unwrap().send(CamMsg::Captured).expect("Can't send status.");
             break;
