@@ -41,7 +41,7 @@ pub fn save(data: Vec<u8>, width: usize, height: usize, orientation: String) {
                 _ => Orientation::Unspecified,
             };
             m.set_orientation(orientation);
-            if let Err(e) = m.save_to_file(&pic_path) {
+            if let Err(_) = m.save_to_file(&pic_path) {
                 println!("Saving exif to {} failed, image was saved though.", &pic_path.to_string_lossy());
             }
         },

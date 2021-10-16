@@ -1,3 +1,5 @@
+#![allow(dead_code)] // A lot of the consts are unused
+
 use linux_media::*;
 use v4l_subdev::*;
 

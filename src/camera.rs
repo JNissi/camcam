@@ -95,7 +95,9 @@ impl Camera {
             *sp = false;
         } // Drop write lock. Otherwise read can't happen in the preview loop.
         if let Some(handle) = self.thread_handle.take() {
-            handle.join();
+            if let Err(_) = handle.join() {
+
+            }
         }
     }
 
@@ -124,6 +126,7 @@ impl Camera {
                 Sensor::Back => {
                     md.unlink_front_camera();
                     md.link_back_camera();
+                    md.auto_focus(true);
                     md.set_back_format(w, h);
                     md.set_back_interval(1, denominator);
                 },

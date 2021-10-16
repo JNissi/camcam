@@ -47,7 +47,7 @@ impl Subdevice {
             format.format.code = 0x3001; //<- BGGR 0x3014; <- RGGB
             format.format.field = 0;
             format.format.colorspace = v4l2_colorspace_V4L2_COLORSPACE_RAW;
-
+            println!("Setting subdevice format {}x{}", width, height);
             v4l2::ioctl(
                 self.handle().fd(),
                 ioctl::VIDIOC_SUBDEV_S_FMT,
@@ -69,7 +69,7 @@ impl Subdevice {
 
             v4l2::ioctl(
                 self.handle().fd(),
-                ioctl::VIDIOC_SUBDEV_G_FRAME_INTERVAL,
+                ioctl::VIDIOC_SUBDEV_S_FRAME_INTERVAL,
                 &mut interval as *mut _ as *mut std::os::raw::c_void
             ).expect("Failed querying subdevice interval");
 
